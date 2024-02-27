@@ -17,6 +17,7 @@
 package cdc
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -65,6 +66,23 @@ type Targets struct {
 	}
 }
 
+type discard struct {
+}
+
+var _ types.MultiAcceptor = (*discard)(nil)
+
+func (d discard) AcceptTableBatch(ctx context.Context, batch *types.TableBatch, options *types.AcceptOptions) error {
+	return nil
+}
+
+func (d discard) AcceptTemporalBatch(ctx context.Context, batch *types.TemporalBatch, options *types.AcceptOptions) error {
+	return nil
+}
+
+func (d discard) AcceptMultiBatch(ctx context.Context, batch *types.MultiBatch, options *types.AcceptOptions) error {
+	return nil
+}
+
 func (t *Targets) getTarget(schema ident.Schema) (*targetInfo, error) {
 	t.mu.RLock()
 	found, ok := t.mu.targets.Get(schema)
@@ -109,11 +127,18 @@ func (t *Targets) getTarget(schema ident.Schema) (*targetInfo, error) {
 	// Set the mode before starting the switcher.
 	t.modeSelector(ret)
 
+	var delegate types.MultiAcceptor
+	if t.cfg.Discard {
+		delegate = discard{}
+	} else {
+		delegate = types.OrderedAcceptorFrom(t.tableAcceptor, t.watchers)
+	}
+
 	ret.acceptor, ret.stat, err = t.switcher.Start(
 		t.stopper,
 		&sequencer.StartOptions{
 			Bounds:   &ret.resolvingRange,
-			Delegate: types.OrderedAcceptorFrom(t.tableAcceptor, t.watchers),
+			Delegate: delegate,
 			Group:    tableGroup,
 		},
 		&ret.mode,

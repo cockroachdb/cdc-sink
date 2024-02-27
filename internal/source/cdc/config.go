@@ -46,6 +46,10 @@ type Config struct {
 	// Force the use of BestEffort mode.
 	BestEffortOnly bool
 
+	// If true, all writes to the target will be discarded. This can be
+	// used for max-theoretical throughput testing.
+	Discard bool
+
 	// Write directly to staging tables. May limit compatibility with
 	// schemas that contain foreign keys.
 	Immediate bool
@@ -71,6 +75,8 @@ func (c *Config) Bind(f *pflag.FlagSet) {
 			"is behind; 0 to disable")
 	f.BoolVar(&c.BestEffortOnly, "bestEffortOnly", false,
 		"disable serial mode; useful for high throughput, skew-tolerant schemas with FKs")
+	f.BoolVar(&c.Discard, "discard", false,
+		"DANGEROUS: discard all incoming data; useful for changefeed throughput optimization")
 	f.BoolVar(&c.Immediate, "immediate", false,
 		"bypass staging tables and write only to target; "+
 			"recommended only for KV-style workloads")
