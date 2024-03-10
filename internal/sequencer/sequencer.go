@@ -59,14 +59,17 @@ type Shim interface {
 
 // StartOptions is passed to [Sequencer.Start].
 type StartOptions struct {
-	Bounds   *notify.Var[hlc.Range] // Control the range of eligible timestamps.
-	Delegate types.MultiAcceptor    // The acceptor to use when continuing to process mutations.
-	Group    *types.TableGroup      // The tables that should be operated on.
+	Bounds      *notify.Var[hlc.Range] // Control the range of eligible timestamps.
+	Delegate    types.MultiAcceptor    // The acceptor to use when continuing to process mutations.
+	Group       *types.TableGroup      // The tables that should be operated on.
+	MaxDeferred int                    // Back off after deferring this many mutations.
+	OneShot     bool                   // Exit after a single pass.
 }
 
-// Copy returns a shallow copy of the options.
+// Copy returns a deep copy of the options.
 func (o *StartOptions) Copy() *StartOptions {
 	ret := *o
+	ret.Group = ret.Group.Copy()
 	return &ret
 }
 

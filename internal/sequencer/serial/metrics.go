@@ -48,9 +48,4 @@ var (
 		Name: "serial_sweep_skew_count",
 		Help: "the number of times a target transaction committed, but the staging tx did not",
 	}, metrics.SchemaLabels)
-	sweepUnstageDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "serial_sweep_unstage_duration_seconds",
-		Help:    "the length of time it took to load the staged mutations",
-		Buckets: metrics.LatencyBuckets,
-	}, metrics.SchemaLabels)
 )

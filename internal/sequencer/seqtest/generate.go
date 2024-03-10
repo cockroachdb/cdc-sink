@@ -99,11 +99,11 @@ func (g *Generator) CheckConsistent(ctx context.Context, t testing.TB) {
 
 	// Verify all mutations have been unstaged.
 	rng := g.Range()
-	staged, err := g.Fixture.PeekStaged(ctx, g.Parent.Name(), rng.Min(), rng.Max())
+	staged, err := g.Fixture.PeekStaged(ctx, g.Parent.Name(), rng)
 	if a.NoError(err) {
 		a.Emptyf(staged, "staging table %s not empty", g.Parent)
 	}
-	staged, err = g.Fixture.PeekStaged(ctx, g.Child.Name(), rng.Min(), rng.Max())
+	staged, err = g.Fixture.PeekStaged(ctx, g.Child.Name(), rng)
 	if a.NoError(err) {
 		a.Emptyf(staged, "staging table %s not empty", g.Child)
 	}
@@ -211,16 +211,6 @@ func (g *Generator) GenerateInto(batch *types.MultiBatch, time hlc.Time) {
 			Time: time,
 		})
 		g.ParentVals[parent] = val
-
-		child := g.pickNewChild()
-		g.ChildVals[child] = val
-		g.ChildToParent[child] = parent
-		_ = batch.Accumulate(g.Child.Name(), types.Mutation{
-			Data: json.RawMessage(fmt.Sprintf(`{ "child": %d, "parent": %d, "val": %d }`,
-				child, parent, val)),
-			Key:  json.RawMessage(fmt.Sprintf(`[ %d ]`, child)),
-			Time: time,
-		})
 
 	case 4: // Re-parent an existing child
 		parent := g.pickExistingParent()

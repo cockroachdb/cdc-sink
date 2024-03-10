@@ -42,6 +42,7 @@ func TestStepByStep(t *testing.T) {
 
 	seqCfg := &sequencer.Config{
 		QuiescentPeriod: 100 * time.Millisecond,
+		Parallelism:     1,
 	}
 	r.NoError(seqCfg.Preflight())
 	seqFixture, err := seqtest.NewSequencerFixture(fixture,
@@ -85,7 +86,8 @@ val INT DEFAULT 0 NOT NULL
 		}),
 		&types.AcceptOptions{},
 	))
-	peeked, err := fixture.PeekStaged(ctx, childInfo.Name(), hlc.Zero(), hlc.New(100, 0))
+	peeked, err := fixture.PeekStaged(ctx, childInfo.Name(),
+		hlc.RangeIncluding(hlc.Zero(), hlc.New(100, 0)))
 	r.NoError(err)
 	r.Len(peeked, 1)
 
@@ -99,7 +101,8 @@ val INT DEFAULT 0 NOT NULL
 		}),
 		&types.AcceptOptions{},
 	))
-	peeked, err = fixture.PeekStaged(ctx, parentInfo.Name(), hlc.Zero(), hlc.New(100, 0))
+	peeked, err = fixture.PeekStaged(ctx, parentInfo.Name(),
+		hlc.RangeIncluding(hlc.Zero(), hlc.New(100, 0)))
 	r.NoError(err)
 	r.Len(peeked, 1)
 

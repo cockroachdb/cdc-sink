@@ -41,8 +41,8 @@ func TestSwitcher(t *testing.T) {
 						_, _, _ = mode.Update(func(mode switcher.Mode) (switcher.Mode, error) {
 							switch mode {
 							case switcher.ModeBestEffort:
-								return switcher.ModeShingle, nil
-							case switcher.ModeShingle:
+								return switcher.ModeSerial, nil
+							case switcher.ModeSerial:
 								return switcher.ModeBestEffort, nil
 							default:
 								panic(fmt.Sprintf("unexpected state %s", mode))

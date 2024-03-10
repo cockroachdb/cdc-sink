@@ -166,7 +166,8 @@ func testQueryHandler(t *testing.T, htc *fixtureConfig) {
 
 		// Verify staged data, if applicable.
 		if !htc.immediate {
-			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(), hlc.Zero(), hlc.New(1, 1))
+			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(),
+				hlc.RangeIncluding(hlc.Zero(), hlc.New(1, 1)))
 			if a.NoError(err) {
 				a.Len(muts, 2)
 				// The order is stable since the underlying query
@@ -235,7 +236,8 @@ func testQueryHandler(t *testing.T, htc *fixtureConfig) {
 
 		// Verify staged and un-applied data, if applicable.
 		if !htc.immediate {
-			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(), hlc.Zero(), hlc.New(10, 1))
+			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(),
+				hlc.RangeIncluding(hlc.Zero(), hlc.New(10, 1)))
 			if a.NoError(err) {
 				a.Len(muts, 2)
 				// The order is stable since the underlying query
@@ -362,7 +364,8 @@ func testHandler(t *testing.T, cfg *fixtureConfig) {
 
 		// Verify staged data, if applicable.
 		if !cfg.immediate {
-			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(), hlc.Zero(), hlc.New(1, 1))
+			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(),
+				hlc.RangeIncluding(hlc.Zero(), hlc.New(1, 1)))
 			if a.NoError(err) {
 				a.Len(muts, 2)
 				// The order is stable since the underlying query
@@ -432,7 +435,8 @@ func testHandler(t *testing.T, cfg *fixtureConfig) {
 
 		// Verify staged and as-yet-unapplied data.
 		if !cfg.immediate {
-			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(), hlc.Zero(), hlc.New(10, 1))
+			muts, err := fixture.PeekStaged(ctx, tableInfo.Name(),
+				hlc.RangeIncluding(hlc.Zero(), hlc.New(10, 1)))
 			if a.NoError(err) {
 				// The order is stable since the underlying query
 				// orders by HLC and key.
@@ -698,7 +702,7 @@ func TestWithForeignKeys(t *testing.T) {
 			cfg.SequencerConfig.Parallelism = 1
 		})
 	})
-	t.Run("normal-shingle", func(t *testing.T) {
+	t.Run("normal-parallel", func(t *testing.T) {
 		testMassBackfillWithForeignKeys(t, rowCount, handlers, func(cfg *Config) {
 			cfg.SequencerConfig.Parallelism = 4
 		})
@@ -860,7 +864,7 @@ func testMassBackfillWithForeignKeys(
 	for _, tbl := range []interface{ Name() ident.Table }{parent, child, grand} {
 		for {
 			found, err := fixtures[0].PeekStaged(ctx, tbl.Name(),
-				hlc.Zero(), endTime)
+				hlc.RangeIncluding(hlc.Zero(), endTime))
 			r.NoError(err)
 			log.Infof("saw %d unapplied staging entries in %s", len(found), tbl)
 			if len(found) == 0 {

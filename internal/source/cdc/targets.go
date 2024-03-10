@@ -206,13 +206,13 @@ func (t *Targets) modeSelector(info *targetInfo) {
 				want := switcher.ModeUnknown
 				if t.cfg.BestEffortWindow <= 0 {
 					// Force a consistent mode.
-					want = switcher.ModeShingle
+					want = switcher.ModeSerial
 				} else if lag >= t.cfg.BestEffortWindow {
 					// Fallen behind, switch to best-effort.
 					want = switcher.ModeBestEffort
 				} else if lag <= t.cfg.BestEffortWindow/4 {
 					// Caught up close-enough to the current time.
-					want = switcher.ModeShingle
+					want = switcher.ModeSerial
 				}
 
 				_, _, _ = info.mode.Update(func(current switcher.Mode) (switcher.Mode, error) {

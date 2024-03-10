@@ -54,6 +54,9 @@ type Status struct {
 	err error
 }
 
+// Outcome is a convenience type alias.
+type Outcome = *notify.Var[*Status]
+
 // Sentinel instances of Status.
 var (
 	executing      = &Status{}
@@ -175,7 +178,7 @@ type Set[K comparable] struct {
 // The cancel function may be called to asynchronously dequeue and
 // cancel the callback. If the callback has already started executing,
 // the cancel callback will have no effect.
-func (s *Set[K]) Schedule(keys []K, fn Callback[K]) (status *notify.Var[*Status], cancel func()) {
+func (s *Set[K]) Schedule(keys []K, fn Callback[K]) (outcome Outcome, cancel func()) {
 	// Make a copy of the key slice and deduplicate it.
 	keys = append([]K(nil), keys...)
 	seen := make(map[K]struct{}, len(keys))
@@ -423,7 +426,7 @@ func (s *Set[K]) enqueue(w *waiter[K]) {
 }
 
 // Wait returns the first non-nil error.
-func Wait(ctx context.Context, outcomes []*notify.Var[*Status]) error {
+func Wait(ctx context.Context, outcomes []Outcome) error {
 outcome:
 	for _, outcome := range outcomes {
 		for {

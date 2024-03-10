@@ -28,7 +28,6 @@ import (
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/retire"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/script"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/serial"
-	"github.com/cockroachdb/cdc-sink/internal/sequencer/shingle"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/switcher"
 	"github.com/cockroachdb/cdc-sink/internal/sinktest/all"
 	"github.com/cockroachdb/cdc-sink/internal/staging/leases"
@@ -48,7 +47,6 @@ type Fixture struct {
 	Retire     *retire.Retire
 	Serial     *serial.Serial
 	Script     *script.Sequencer
-	Shingle    *shingle.Shingle
 	Switcher   *switcher.Switcher
 }
 
@@ -59,13 +57,11 @@ func (f *Fixture) SequencerFor(
 ) (sequencer.Sequencer, error) {
 	switch mode {
 	case switcher.ModeBestEffort:
-		return f.BestEffort, nil
+		return f.BestEffort.Wrap(ctx, f.Serial)
 	case switcher.ModeImmediate:
 		return f.Immediate, nil
 	case switcher.ModeSerial:
 		return f.Serial, nil
-	case switcher.ModeShingle:
-		return f.Shingle.Wrap(ctx, f.Serial)
 	default:
 		return nil, errors.Errorf("unimplemented, %s", mode)
 	}

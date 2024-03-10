@@ -23,7 +23,6 @@ import (
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/scheduler"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/script"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/serial"
-	"github.com/cockroachdb/cdc-sink/internal/sequencer/shingle"
 	"github.com/cockroachdb/cdc-sink/internal/types"
 	"github.com/cockroachdb/cdc-sink/internal/util/diag"
 	"github.com/google/wire"
@@ -37,7 +36,6 @@ var Set = wire.NewSet(
 	script.Set,
 	serial.Set,
 	scheduler.Set,
-	shingle.Set,
 
 	ProvideSequencer,
 )
@@ -49,7 +47,6 @@ func ProvideSequencer(
 	imm *immediate.Immediate,
 	script *script.Sequencer,
 	serial *serial.Serial,
-	shingle *shingle.Shingle,
 	stagingPool *types.StagingPool,
 	targetPool *types.TargetPool,
 ) *Switcher {
@@ -59,7 +56,6 @@ func ProvideSequencer(
 		immediate:   imm,
 		script:      script,
 		serial:      serial,
-		shingle:     shingle,
 		stagingPool: stagingPool,
 		targetPool:  targetPool,
 	}

@@ -21,10 +21,8 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/cdc-sink/internal/types"
-	"github.com/cockroachdb/cdc-sink/internal/util/hlc"
 	"github.com/cockroachdb/cdc-sink/internal/util/ident"
 	"github.com/cockroachdb/cdc-sink/internal/util/stopper"
-	"github.com/pkg/errors"
 )
 
 type factory struct {
@@ -69,87 +67,34 @@ func (f *factory) getUnlocked(table ident.Table) *stage {
 	return f.mu.instances.GetZero(table)
 }
 
-// Unstage implements types.Stagers.
-func (f *factory) Unstage(
-	ctx context.Context,
-	tx types.StagingQuerier,
-	cursor *types.UnstageCursor,
-	fn types.UnstageCallback,
-) (*types.UnstageCursor, bool, error) {
-	// Without being able to set scan bounds, it would be possible to
-	// create an arbitrarily large number of row locks. An unbounded
-	// scan isn't used anywhere today, so this exists as a guard-rail
-	// against future mis-use of the API.
-	if cursor.UpdateLimit+cursor.TimestampLimit == 0 {
-		return nil, false, errors.New("a timestamp and/or update limit must be set")
+// Read implements types.Stagers.
+func (f *factory) Read(
+	ctx *stopper.Context, q *types.StagingQuery,
+) (<-chan *types.StagingCursor, error) {
+	// Ensure all staging tables do, in fact, exist.
+	for _, table := range q.Targets {
+		if _, err := f.Get(ctx, table); err != nil {
+			return nil, err
+		}
 	}
 
-	// Duplicate the cursor so callers can choose to advance.
-	cursor = cursor.Copy()
-
-	q, err := newTemplateData(cursor, f.stagingDB).Eval()
+	sqlQ, err := (&templateData{
+		ScanLimit:     q.SweepLimit,
+		StagingSchema: f.stagingDB,
+		Targets:       q.Targets,
+	}).Eval()
 	if err != nil {
-		return nil, false, err
-	}
-	nanoOffsets := make([]int64, len(cursor.Targets))
-	logicalOffsets := make([]int, len(cursor.Targets))
-	keyOffsets := make([]string, len(cursor.Targets))
-	for idx, tbl := range cursor.Targets {
-		offset, ok := cursor.TableOffsets.Get(tbl)
-		if !ok {
-			nanoOffsets[idx] = cursor.StartAt.Nanos()
-			logicalOffsets[idx] = cursor.StartAt.Logical()
-		} else {
-			nanoOffsets[idx] = offset.Time.Nanos()
-			logicalOffsets[idx] = offset.Time.Logical()
-			keyOffsets[idx] = string(offset.Key)
-		}
-	}
-	hadRows := false
-	rows, err := tx.Query(ctx, q,
-		nanoOffsets,
-		logicalOffsets,
-		cursor.EndBefore.Nanos(),
-		cursor.EndBefore.Logical(),
-		keyOffsets)
-	if err != nil {
-		return nil, false, errors.Wrap(err, q)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var mut types.Mutation
-		var tableIdx int
-		var nanos int64
-		var logical int
-		if err := rows.Scan(&tableIdx, &nanos, &logical, &mut.Key, &mut.Data, &mut.Before); err != nil {
-			return nil, false, errors.WithStack(err)
-		}
-
-		mut.Before, err = maybeGunzip(mut.Before)
-		if err != nil {
-			return nil, false, err
-		}
-		mut.Data, err = maybeGunzip(mut.Data)
-		if err != nil {
-			return nil, false, err
-		}
-		mut.Time = hlc.New(nanos, logical)
-
-		cursor.TableOffsets.Put(cursor.Targets[tableIdx], types.UnstageOffset{
-			Time: mut.Time,
-			Key:  mut.Key,
-		})
-		hadRows = true
-
-		// No going back.
-		if err := fn(ctx, cursor.Targets[tableIdx], mut); err != nil {
-			return nil, false, err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, errors.WithStack(err)
+		return nil, err
 	}
 
-	return cursor, hadRows, nil
+	// In the worst case, there's one row per distinct timestamp.
+	out := make(chan *types.StagingCursor, q.SweepLimit)
+
+	r := newReader(q.Bounds, f.db, out, sqlQ, q.SegmentSize, q.Targets)
+	ctx.Go(func() error {
+		defer close(out)
+		r.run(ctx)
+		return nil
+	})
+	return out, nil
 }

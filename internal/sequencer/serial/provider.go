@@ -18,6 +18,7 @@ package serial
 
 import (
 	"github.com/cockroachdb/cdc-sink/internal/sequencer"
+	"github.com/cockroachdb/cdc-sink/internal/sequencer/scheduler"
 	"github.com/cockroachdb/cdc-sink/internal/types"
 	"github.com/google/wire"
 )
@@ -29,6 +30,7 @@ var Set = wire.NewSet(ProvideSerial)
 func ProvideSerial(
 	cfg *sequencer.Config,
 	leases types.Leases,
+	scheduler *scheduler.Scheduler,
 	stagers types.Stagers,
 	stagingPool *types.StagingPool,
 	targetPool *types.TargetPool,
@@ -36,6 +38,7 @@ func ProvideSerial(
 	return &Serial{
 		cfg:         cfg,
 		leases:      leases,
+		scheduler:   scheduler,
 		stagers:     stagers,
 		stagingPool: stagingPool,
 		targetPool:  targetPool,

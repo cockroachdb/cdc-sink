@@ -90,12 +90,11 @@ CREATE TABLE IF NOT EXISTS %[1]s (
       mut BYTES NOT NULL,
    before BYTES NULL,
   applied BOOL NOT NULL DEFAULT false,
-    lease TIMESTAMP NULL,
   %[2]s
   PRIMARY KEY (nanos, logical, key),
     INDEX %[3]s (key) STORING (applied), -- Improve performance of StageIfExists
    FAMILY cold (mut, before),
-   FAMILY hot (applied, lease)
+   FAMILY hot (applied)
 )`
 
 // newStage constructs a new mutation stage that will track pending

@@ -31,8 +31,8 @@ import (
 	"github.com/cockroachdb/cdc-sink/internal/util/diag"
 	"github.com/cockroachdb/cdc-sink/internal/util/hlc"
 	"github.com/cockroachdb/cdc-sink/internal/util/ident"
-	"github.com/cockroachdb/cdc-sink/internal/util/retry"
-	"github.com/jackc/pgx/v5"
+	"github.com/cockroachdb/cdc-sink/internal/util/notify"
+	"github.com/cockroachdb/cdc-sink/internal/util/stopper"
 	"github.com/pkg/errors"
 )
 
@@ -97,37 +97,63 @@ func (f *Fixture) CreateTargetTable(
 // PeekStaged peeks at the data which has been staged for the target
 // table between the given timestamps.
 func (f *Fixture) PeekStaged(
-	ctx context.Context, tbl ident.Table, startAt, endBefore hlc.Time,
+	ctx context.Context, tbl ident.Table, bounds hlc.Range,
 ) ([]types.Mutation, error) {
-	var ret []types.Mutation
-	if err := retry.Retry(ctx, func(ctx context.Context) error {
-		ret = ret[:0] // Reset if looping.
-		tx, err := f.StagingPool.BeginTx(ctx, pgx.TxOptions{})
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		defer func() { _ = tx.Rollback(ctx) }()
-
-		q := &types.UnstageCursor{
-			EndBefore:    endBefore,
-			IgnoreLeases: true,
-			StartAt:      startAt,
-			Targets:      []ident.Table{tbl},
-			UpdateLimit:  10_000, // Sanity limit to let DB "breathe".
-		}
-		for selecting := true; selecting; {
-			q, selecting, err = f.Stagers.Unstage(ctx, tx, q,
-				func(ctx context.Context, tbl ident.Table, mut types.Mutation) error {
-					ret = append(ret, mut)
-					return nil
-				})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	batch, err := f.ReadStagingQuery(ctx, &types.StagingQuery{
+		Bounds:      notify.VarOf(bounds),
+		SegmentSize: 10_000,
+		SweepLimit:  10_000,
+		Targets:     []ident.Table{tbl},
+	})
+	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	return types.Flatten[*types.MultiBatch](batch), nil
+}
+
+// ReadStagingQuery executes the staging query, returning the complete
+// result set.
+func (f *Fixture) ReadStagingQuery(
+	ctx context.Context, q *types.StagingQuery,
+) (*types.MultiBatch, error) {
+	ret := &types.MultiBatch{}
+
+	stop := stopper.WithContext(ctx)
+	defer stop.Stop(0)
+
+	ch, err := f.Stagers.Read(stop, q)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		case cursor := <-ch:
+			if cursor.Error != nil {
+				// We're calling WithStack here because we're calling
+				// channel.read, and not an own-API interface.
+				return nil, errors.WithStack(cursor.Error)
+			}
+
+			// No more data is expected on the channel unless the bounds
+			// were to change. This means we're done. We'll sanity-check
+			// that the idle message matches the requested bounds.
+			if !cursor.Idle.Empty() {
+				expect, _ := q.Bounds.Get()
+				if cursor.Idle != expect {
+					return nil, errors.Errorf("idle bounds did not match: %s vs %s",
+						cursor.Idle, expect)
+				}
+				return ret, nil
+			}
+
+			// Copy the data into our accumulator.
+			if err := cursor.Batch.CopyInto(ret); err != nil {
+				return nil, err
+			}
+
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }

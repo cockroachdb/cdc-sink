@@ -46,8 +46,8 @@ func LeaseGroup(
 			// Acquire a lease.
 			leases.Singleton(outer, fmt.Sprintf("sequtil.Lease.%s", group.Name),
 				func(leaseContext context.Context) error {
-					log.Infof("acquired gloabal lease for %s", group.Name)
-					defer log.Infof("lost global lease for %s", group.Name)
+					log.Debugf("acquired gloabal lease for %s", group.Name)
+					defer log.Debugf("lost global lease for %s", group.Name)
 
 					// Create a nested stopper whose lifetime is bound
 					// to that of the lease.

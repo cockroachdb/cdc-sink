@@ -26,7 +26,6 @@ import (
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/immediate"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/script"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/serial"
-	"github.com/cockroachdb/cdc-sink/internal/sequencer/shingle"
 	"github.com/cockroachdb/cdc-sink/internal/types"
 	"github.com/cockroachdb/cdc-sink/internal/util/diag"
 	"github.com/cockroachdb/cdc-sink/internal/util/notify"
@@ -45,10 +44,9 @@ const (
 	ModeBestEffort
 	ModeImmediate
 	ModeSerial
-	ModeShingle
 
-	MinMode = Mode(1)     // Used for testing all modes.
-	MaxMode = ModeShingle // Used for testing all modes.
+	MinMode = Mode(1)    // Used for testing all modes.
+	MaxMode = ModeSerial // Used for testing all modes.
 )
 
 // Switcher switches between delegate sequencers. It also adds script
@@ -59,7 +57,6 @@ type Switcher struct {
 	immediate   *immediate.Immediate
 	serial      *serial.Serial
 	script      *script.Sequencer
-	shingle     *shingle.Shingle
 	stagingPool *types.StagingPool
 	targetPool  *types.TargetPool
 

@@ -24,6 +24,7 @@ import (
 
 // Defaults for flag bindings.
 const (
+	DefaultFlushPeriod     = 100 * time.Millisecond
 	DefaultFlushSize       = 1_000
 	DefaultParallelism     = 16
 	DefaultQuiescentPeriod = 10 * time.Second
@@ -36,6 +37,7 @@ const (
 // all sequencers necessarily respond to all configuration options.
 type Config struct {
 	Chaos           float32       // Set by tests to inject errors.
+	FlushPeriod     time.Duration // Don't queue mutations for longer than this.
 	FlushSize       int           // Flush after buffering this many mutations.
 	Parallelism     int           // The number of concurrent connections to use.
 	QuiescentPeriod time.Duration // How often to sweep for queued mutations.
@@ -46,6 +48,8 @@ type Config struct {
 
 // Bind adds configuration flags to the set.
 func (c *Config) Bind(flags *pflag.FlagSet) {
+	flags.DurationVar(&c.FlushPeriod, "flushPeriod", DefaultFlushPeriod,
+		"flush queued mutations after this duration")
 	flags.IntVar(&c.FlushSize, "flushSize", DefaultFlushSize,
 		"ideal batch size to determine when to flush mutations")
 	flags.IntVar(&c.Parallelism, "parallelism", DefaultParallelism,
@@ -62,6 +66,9 @@ func (c *Config) Bind(flags *pflag.FlagSet) {
 
 // Preflight ensure that the configuration has sane defaults.
 func (c *Config) Preflight() error {
+	if c.FlushPeriod == 0 {
+		c.FlushPeriod = DefaultFlushPeriod
+	}
 	if c.FlushSize == 0 {
 		c.FlushSize = DefaultFlushSize
 	}

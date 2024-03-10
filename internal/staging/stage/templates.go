@@ -20,9 +20,7 @@ import (
 	"embed"
 	"strings"
 	"text/template"
-	"time"
 
-	"github.com/cockroachdb/cdc-sink/internal/types"
 	"github.com/cockroachdb/cdc-sink/internal/util/ident"
 	"github.com/pkg/errors"
 )
@@ -42,24 +40,16 @@ var (
 )
 
 type templateData struct {
-	Cursor         *types.UnstageCursor // Required input.
-	IgnoreLeases   bool                 // Don't block leased keys.
-	SetApplied     bool                 // Set the applied column to true.
-	SetLeaseExpiry time.Time            // Set the lease column to this value.
-	StagingSchema  ident.Schema         // Required input.
-}
-
-func newTemplateData(cursor *types.UnstageCursor, stagingSchema ident.Schema) *templateData {
-	return &templateData{
-		Cursor:         cursor,
-		IgnoreLeases:   cursor.IgnoreLeases,
-		SetApplied:     cursor.LeaseExpiry.IsZero(),
-		SetLeaseExpiry: cursor.LeaseExpiry,
-		StagingSchema:  stagingSchema,
-	}
+	ScanLimit     int           // Sanity-check to ensure throughput.
+	StagingSchema ident.Schema  // Required input.
+	Targets       []ident.Table // The staging tables to read.
 }
 
 func (d *templateData) Eval() (string, error) {
+	if d.ScanLimit == 0 {
+		return "", errors.New("no scan limit set")
+	}
+
 	var sb strings.Builder
 	err := unstage.Execute(&sb, d)
 	if err != nil {

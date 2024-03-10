@@ -226,6 +226,9 @@ func (s *Context) Stop(gracePeriod time.Duration) {
 	// Cancel the context if nothing's currently running.
 	if s.mu.count == 0 {
 		s.cancelLocked(ErrStopped)
+	} else if gracePeriod < 0 {
+		// Immediate stop.
+		s.cancelLocked(ErrGracePeriodExpired)
 	} else if gracePeriod > 0 {
 		go func() {
 			select {

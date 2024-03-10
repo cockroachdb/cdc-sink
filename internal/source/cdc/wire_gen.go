@@ -14,7 +14,6 @@ import (
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/scheduler"
 	script2 "github.com/cockroachdb/cdc-sink/internal/sequencer/script"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/serial"
-	"github.com/cockroachdb/cdc-sink/internal/sequencer/shingle"
 	"github.com/cockroachdb/cdc-sink/internal/sequencer/switcher"
 	"github.com/cockroachdb/cdc-sink/internal/sinktest/all"
 	"github.com/cockroachdb/cdc-sink/internal/staging/checkpoint"
@@ -71,9 +70,8 @@ func newTestFixture(fixture *all.Fixture, config *Config) (*testFixture, error) 
 		return nil, err
 	}
 	sequencer := script2.ProvideSequencer(loader, targetPool, watchers)
-	serialSerial := serial.ProvideSerial(sequencerConfig, typesLeases, stagers, stagingPool, targetPool)
-	shingleShingle := shingle.ProvideShingle(sequencerConfig, schedulerScheduler, stagers, stagingPool, targetPool)
-	switcherSwitcher := switcher.ProvideSequencer(bestEffort, diagnostics, immediateImmediate, sequencer, serialSerial, shingleShingle, stagingPool, targetPool)
+	serialSerial := serial.ProvideSerial(sequencerConfig, typesLeases, schedulerScheduler, stagers, stagingPool, targetPool)
+	switcherSwitcher := switcher.ProvideSequencer(bestEffort, diagnostics, immediateImmediate, sequencer, serialSerial, stagingPool, targetPool)
 	targets, err := ProvideTargets(context, acceptor, config, checkpoints, retireRetire, stagingPool, switcherSwitcher, watchers)
 	if err != nil {
 		return nil, err
