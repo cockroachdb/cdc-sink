@@ -410,6 +410,30 @@ func TestStatusFor(t *testing.T) {
 	r.ErrorIs(StatusFor(context.Canceled).Err(), context.Canceled)
 }
 
+func TestSplit(t *testing.T) {
+	r := require.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	s, err := New[int](GoRunner(ctx), "test")
+	r.NoError(err)
+
+	keys := []int{1, 2, 3, 4}
+	immediate, deferred := s.Split(keys)
+	r.Equal(keys, immediate)
+	r.Empty(deferred)
+
+	s.Schedule([]int{1, 2}, func(keys []int) error {
+		<-ctx.Done()
+		return nil
+	})
+
+	immediate, deferred = s.Split(keys)
+	r.Equal([]int{3, 4}, immediate)
+	r.Equal([]int{1, 2}, deferred)
+}
+
 func TestFakeOutcome(t *testing.T) {
 	r := require.New(t)
 

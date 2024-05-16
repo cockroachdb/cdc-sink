@@ -17,8 +17,10 @@
 package sequencer
 
 import (
+	"strconv"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )
 
@@ -29,6 +31,7 @@ const (
 	DefaultParallelism     = 16
 	DefaultQuiescentPeriod = 10 * time.Second
 	DefaultRetireOffset    = 24 * time.Hour
+	DefaultReorderBatches  = true
 	DefaultScanSize        = 10_000
 	DefaultTimestampLimit  = 1_000
 )
@@ -42,8 +45,11 @@ type Config struct {
 	Parallelism     int           // The number of concurrent connections to use.
 	QuiescentPeriod time.Duration // How often to sweep for queued mutations.
 	RetireOffset    time.Duration // Delay removal of applied mutations.
+	ReorderBatches  bool          // Allow transactions to be applied out-of-order.
 	ScanSize        int           // Limit on staging-table read queries.
 	TimestampLimit  int           // The maximum number of timestamps to operate on.
+
+	reorderMaybe string // Fake a tri-state behavior for flags processing.
 }
 
 // Bind adds configuration flags to the set.
@@ -58,6 +64,8 @@ func (c *Config) Bind(flags *pflag.FlagSet) {
 		"how often to retry deferred mutations")
 	flags.DurationVar(&c.RetireOffset, "retireOffset", DefaultRetireOffset,
 		"delay removal of applied mutations")
+	flags.StringVar(&c.reorderMaybe, "reorderBatches", strconv.FormatBool(DefaultReorderBatches),
+		"allow transactions to be applied out of order to improve concurrency")
 	flags.IntVar(&c.ScanSize, "scanSize", DefaultScanSize,
 		"the number of rows to retrieve from staging")
 	flags.IntVar(&c.TimestampLimit, "timestampLimit", DefaultTimestampLimit,
@@ -81,6 +89,13 @@ func (c *Config) Preflight() error {
 	// 0 is a valid value for RetireOffset.
 	if c.RetireOffset < 0 {
 		c.RetireOffset = DefaultRetireOffset
+	}
+	if c.reorderMaybe == "" {
+		c.ReorderBatches = DefaultReorderBatches
+	} else if parsed, err := strconv.ParseBool(c.reorderMaybe); err != nil {
+		return errors.New("reorderBatches must be a valid boolean value")
+	} else {
+		c.ReorderBatches = parsed
 	}
 	if c.ScanSize == 0 {
 		c.ScanSize = DefaultScanSize

@@ -65,6 +65,75 @@ func (s *Scheduler) Singleton(
 	return ret
 }
 
+// Split separates the batch into the parts which could be immediately
+// executed, versus those that depend on work that is currently in
+// flight. It enables transactions to be temporally reordered while
+// still maintaining per-key mutation order.
+func (s *Scheduler) Split(batch *types.MultiBatch) ([]*types.MultiBatch, error) {
+	// Memoize calls to keyForBatch.
+	keysByBatch := make(map[*types.TemporalBatch][]string, len(batch.Data))
+
+	// It's likely that work is proceeding in the background which will
+	// make it less likely that any given key is deferred while we're
+	// iterating over the list. We must maintain the set of keys that
+	// have been treated as deferred while executing the loop below.
+	deferringKeys := make(map[string]struct{})
+	for _, temporal := range batch.Data {
+		batchKeys := keyForBatch[*types.TemporalBatch](temporal)
+		keysByBatch[temporal] = batchKeys
+
+		// If any keys in the batch are already deferred, ensure all
+		// keys are deferred.
+		deferBatch := false
+		for _, batchKey := range batchKeys {
+			if _, alreadyDeferred := deferringKeys[batchKey]; alreadyDeferred {
+				deferBatch = true
+				break
+			}
+		}
+
+		// Check against outstanding work in the scheduler.
+		if !deferBatch {
+			_, batchDeferred := s.set.Split(batchKeys)
+			deferBatch = len(batchDeferred) > 0
+		}
+
+		if deferBatch {
+			for _, key := range batchKeys {
+				deferringKeys[key] = struct{}{}
+			}
+		}
+	}
+
+	// Now that we know all keys that would likely result in deferred
+	// scheduling, we can classify the batches.
+	immediate := &types.MultiBatch{}
+	deferred := &types.MultiBatch{}
+	for _, temporal := range batch.Data {
+		dest := immediate
+		for _, batchKey := range keysByBatch[temporal] {
+			if _, deferring := deferringKeys[batchKey]; deferring {
+				dest = deferred
+				break
+			}
+		}
+
+		if err := temporal.CopyInto(dest); err != nil {
+			return nil, err
+		}
+	}
+
+	ret := make([]*types.MultiBatch, 0, 2)
+	if immediate.Len() > 0 {
+		ret = append(ret, immediate)
+	}
+	if deferred.Len() > 0 {
+		ret = append(ret, deferred)
+	}
+
+	return ret, nil
+}
+
 // TableBatch executes the callback executed when it has clear access to
 // apply the mutation in the given batch.
 func (s *Scheduler) TableBatch(

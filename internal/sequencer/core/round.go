@@ -53,11 +53,12 @@ type round struct {
 	timestampCount int
 
 	// Metrics
-	applied     prometheus.Counter
-	duration    prometheus.Observer
-	lastAttempt prometheus.Gauge
-	lastSuccess prometheus.Gauge
-	skew        prometheus.Counter
+	applied         prometheus.Counter
+	duration        prometheus.Observer
+	lastAttempt     prometheus.Gauge
+	lastSuccess     prometheus.Gauge
+	reorderPromoted prometheus.Counter
+	skew            prometheus.Counter
 }
 
 func (r *round) accumulate(segment *types.MultiBatch) error {
@@ -75,15 +76,17 @@ func (r *round) accumulate(segment *types.MultiBatch) error {
 	return segment.CopyInto(r.batch)
 }
 
-// scheduleCommit handles the error-retry logic around tryCommit.
+// scheduleCommit handles the error, retry, and reporting logic around
+// tryCommit. The dependsOn slice delays any progress reports until the
+// other outcomes have successfully resolved.
 func (r *round) scheduleCommit(
-	ctx context.Context, progressReport chan<- hlc.Range,
+	ctx context.Context, progressReport chan<- hlc.Range, dependsOn []lockset.Outcome,
 ) lockset.Outcome {
 	start := time.Now()
 	return r.Core.scheduler.Batch(r.batch, func() error {
 		// We want to close the reporting channel, unless we're asking
 		// to be retried.
-		finalReport := true
+		finalReport := progressReport != nil
 		defer func() {
 			if finalReport {
 				close(progressReport)
@@ -104,7 +107,14 @@ func (r *round) scheduleCommit(
 
 		// Report successful progress.
 		if err == nil {
-			progressReport <- r.advanceTo
+			// Ensure that dependencies have finished.
+			if err := lockset.Wait(ctx, dependsOn); err != nil {
+				r.poisoned.MarkPoisoned(r.batch)
+				return err
+			}
+			if progressReport != nil {
+				progressReport <- r.advanceTo
+			}
 
 			log.Tracef("round.tryCommit: commited %s (%d mutations, %d timestamps) to %s",
 				r.group, r.mutationCount, r.timestampCount, r.advanceTo)
@@ -122,7 +132,9 @@ func (r *round) scheduleCommit(
 			finalReport = false
 			return lockset.RetryAtHead(err).Or(func() {
 				r.poisoned.MarkPoisoned(r.batch)
-				close(progressReport)
+				if progressReport != nil {
+					close(progressReport)
+				}
 			})
 		}
 

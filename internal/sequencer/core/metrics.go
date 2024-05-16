@@ -23,6 +23,10 @@ import (
 )
 
 var (
+	reorderPromoted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "core_reorder_promoted_transactions_count",
+		Help: "the number of source transaction promoted during transaction reordering",
+	}, metrics.SchemaLabels)
 	sweepActive = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "core_sweep_active_bool",
 		Help: "non-zero if this instance of Replicator is processing the schema",

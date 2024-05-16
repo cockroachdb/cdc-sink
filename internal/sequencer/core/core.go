@@ -149,11 +149,12 @@ func (s *Core) Start(
 			poisoned: poisoned,
 
 			// Metrics.
-			applied:     sweepAppliedCount.WithLabelValues(metricLabels...),
-			duration:    sweepDuration.WithLabelValues(metricLabels...),
-			lastAttempt: sweepLastAttempt.WithLabelValues(metricLabels...),
-			lastSuccess: sweepLastSuccess.WithLabelValues(metricLabels...),
-			skew:        sweepSkewCount.WithLabelValues(metricLabels...),
+			applied:         sweepAppliedCount.WithLabelValues(metricLabels...),
+			duration:        sweepDuration.WithLabelValues(metricLabels...),
+			lastAttempt:     sweepLastAttempt.WithLabelValues(metricLabels...),
+			lastSuccess:     sweepLastSuccess.WithLabelValues(metricLabels...),
+			skew:            sweepSkewCount.WithLabelValues(metricLabels...),
+			reorderPromoted: reorderPromoted.WithLabelValues(metricLabels...),
 		}
 		nextRound := func() *round {
 			cpy := *template
@@ -165,24 +166,57 @@ func (s *Core) Start(
 		var accumulator *round
 		// Async error reporting from tasks.
 		errorReports := make(chan lockset.Outcome, s.cfg.Parallelism+1)
-		flushAccumulator := func() {
+		flushAccumulator := func() error {
+			var rounds []*round
+			if s.cfg.ReorderBatches {
+				// Determine if there's a more optimal ordering of
+				// source transactions that accounts for any target
+				// transactions that are currently in flight.
+				parts, err := s.scheduler.Split(accumulator.batch)
+				if err != nil {
+					return err
+				}
+
+				rounds = make([]*round, len(parts))
+				for idx, part := range parts {
+					r := nextRound()
+					r.batch = part
+					rounds[idx] = r
+				}
+			} else {
+				rounds = []*round{accumulator}
+			}
+			accumulator = nil
+
 			// Create a channel to report checkpoint progress and
 			// enqueue it to maintain correct time order.
 			report := make(chan hlc.Range, 1)
 			select {
 			case progressReports <- report:
 			case <-ctx.Stopping():
-				return
+				return nil
 			}
 
-			// Start a task to store the new data. Hand the outcome
-			// object off to the top-level monitoring loop.
-			commitOutcome := accumulator.scheduleCommit(ctx, report)
-			accumulator = nil
-			select {
-			case errorReports <- commitOutcome:
-			case <-ctx.Stopping():
+			// Have each round schedule itself. We want the last round
+			// to make a progress report only when its dependent rounds
+			// have successfully completed.
+			dependsOn := make([]lockset.Outcome, len(rounds)-1)
+			for idx, r := range rounds {
+				if idx < len(dependsOn) {
+					dependsOn[idx] = r.scheduleCommit(ctx, nil, nil)
+					r.reorderPromoted.Add(float64(r.batch.Len()))
+					continue
+				}
+
+				// Start a task to store the new data. Hand the outcome
+				// object off to the top-level monitoring loop.
+				commitOutcome := r.scheduleCommit(ctx, report, dependsOn)
+				select {
+				case errorReports <- commitOutcome:
+				case <-ctx.Stopping():
+				}
 			}
+			return nil
 		}
 
 		// A Copier aggregates the individual temporal batches of data

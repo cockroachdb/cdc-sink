@@ -273,6 +273,32 @@ func (s *Set[K]) Schedule(keys []K, fn Callback[K]) (outcome Outcome, cancel fun
 	}
 }
 
+// Split classifies given keys into ones that could be executed
+// immediately if passed to [Set.Schedule] versus those that would be
+// deferred.
+func (s *Set[K]) Split(keys []K) (immediate []K, deferred []K) {
+	immediate = make([]K, 0, len(keys))
+	deferred = make([]K, 0, len(keys))
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.mu.queues) == 0 {
+		immediate = append(immediate, keys...)
+		return
+	}
+
+	for _, key := range keys {
+		if len(s.mu.queues[key]) == 0 {
+			immediate = append(immediate, key)
+		} else {
+			deferred = append(deferred, key)
+		}
+	}
+
+	return
+}
+
 // dequeue removes the waiter from all wait queues. This method will
 // also update the head of queue counts for any newly-eligible waiter.
 // Waiters that have reached the heads of their respective queues will
